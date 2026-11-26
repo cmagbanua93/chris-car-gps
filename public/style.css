@@ -82,3 +82,17 @@ h4 { margin: 14px 0 4px; font-size: 13px; }
 .ti-drive { color: var(--muted); }
 .pmark { width: 22px; height: 26px; background: #2f6fde; color: #fff; font-weight: 700; display: grid; place-items: center; clip-path: polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%); }
 .carmark { width: 40px; height: 40px; display: grid; place-items: center; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+
+details.more { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.more summary { cursor: pointer; font-size: 13px; color: var(--accent); font-weight: 600; }
+details.more dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 8px 0; font-size: 13px; }
+details.more dt { color: var(--muted); }
+details.more dd { margin: 0; word-break: break-word; }
+details.more a { color: var(--accent); }
+.bars { display: inline-flex; align-items: flex-end; gap: 2px; }
+.bars i { width: 4px; background: var(--line); border-radius: 1px; display: inline-block; }
+.bars i.on { background: var(--moving); }
+.daykm { display: flex; justify-content: space-around; align-items: flex-end; gap: 6px; margin-top: 8px; height: 76px; }
+.dk { display: flex; flex-direction: column; align-items: center; font-size: 11px; gap: 2px; }
+.dkbar { width: 18px; background: var(--accent); border-radius: 3px 3px 0 0; min-height: 2px; }
+.dk span { color: var(--muted); }

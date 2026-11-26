@@ -78,7 +78,8 @@ function renderCars() {
     const t = today[v.id];
     const ign = s.ignition == null ? '—' : s.ignition ? 'On' : 'Off';
     const eng = engineLine(v);
-    const power = s.powerV != null ? `${s.powerV} V` : '—';
+    const pv = s.powerV ?? v.carVoltage;
+    const power = pv != null ? `${pv} V` : '—';
     return `<div class="car ${selected === v.id ? 'sel' : ''}" data-id="${esc(v.id)}">
       <div class="row"><div><h3>${esc(v.name)}</h3><div class="plate">${esc(v.plate && v.plate !== v.name ? v.plate + ' · ' : '')}${esc(v.source)}</div></div>
       <span class="pill ${v.status}">${pillText(v)}</span></div>
@@ -92,9 +93,36 @@ function renderCars() {
         <div class="stat"><b>${ago(v.serverTime || v.trackerTime)}</b>Last update</div>
       </div>
       ${v.address ? `<div class="addr">${esc(v.address)}</div>` : ''}
+      ${detailsHtml(v)}
     </div>`;
   }).join('');
-  document.querySelectorAll('.car').forEach((el) => el.addEventListener('click', () => focusCar(el.dataset.id)));
+  document.querySelectorAll('.car').forEach((el) => el.addEventListener('click', (ev) => { if (ev.target.closest('details')) return; focusCar(el.dataset.id); }));
+  document.querySelectorAll('details.more').forEach((d) => d.addEventListener('toggle', () => { if (d.open) openDetails.add(d.dataset.id); else openDetails.delete(d.dataset.id); }));
+}
+
+const openDetails = new Set();
+function bars(n, max = 5) {
+  if (n == null) return '—';
+  const lvl = Math.max(0, Math.min(max, Math.round(n)));
+  return `<span class="bars" title="${n} of ${max}">${Array.from({ length: max }, (_, i) => `<i class="${i < lvl ? 'on' : ''}" style="height:${4 + i * 3}px"></i>`).join('')}</span>`;
+}
+function detailsHtml(v) {
+  const rows = [];
+  if (v.sim) rows.push(['Tracker SIM', `<a href="tel:${esc(v.sim)}">${esc(v.sim)}</a> · <a href="sms:${esc(v.sim)}">SMS</a>`]);
+  if (v.plate && v.plate !== v.name) rows.push(['Plate', esc(v.plate)]);
+  if (v.group) rows.push(['Group', esc(v.group)]);
+  if (v.odometerKm) rows.push(['Odometer', `${Math.round(v.odometerKm).toLocaleString()} km`]);
+  rows.push(['GSM signal', bars(v.gsm)]);
+  if (v.satellites != null) rows.push(['GPS satellites', String(v.satellites)]);
+  if (v.trackerBatteryV != null) rows.push(['Tracker battery', `${v.trackerBatteryV} V${v.trackerBatteryV < 3.7 ? ' <span class="tag off">low</span>' : ''}`]);
+  rows.push(['Engine signal', esc(v.ignitionSource || '—')]);
+  rows.push(['Tracker', `${esc(v.protocol || 'GPS')} · IMEI ${esc(v.imei)}`]);
+  rows.push(['Provider', esc(v.source)]);
+  const days = (v.dailyKm || []).slice().reverse();
+  const max = Math.max(1, ...days.map((d) => d.km));
+  const chart = days.length ? `<div class="daykm">${days.map((d) => `<div class="dk"><div class="dkbar" style="height:${Math.round((d.km / max) * 40)}px" title="${d.km} km"></div><b>${d.km}</b><span>${d.day}</span></div>`).join('')}</div><div class="muted" style="text-align:center">km per day (date of month), last ${days.length} days</div>` : '';
+  return `<details class="more" data-id="${esc(v.id)}" ${openDetails.has(v.id) ? 'open' : ''}><summary>Car details</summary>
+    <dl>${rows.map(([k, val]) => `<dt>${k}</dt><dd>${val}</dd>`).join('')}</dl>${chart}</details>`;
 }
 
 function pillText(v) {

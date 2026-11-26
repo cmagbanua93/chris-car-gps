@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Dashboard</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="logo">●</span> Fleet Dashboard <span id="demoBadge" class="badge" hidden>Demo data</span></div>
+  <div id="sources" class="sources"></div>
+</header>
+<div class="layout">
+  <aside class="side">
+    <div class="tiles" id="tiles"></div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="cars">Cars</button>
+      <button class="tab" data-tab="history">History</button>
+      <button class="tab" data-tab="alerts">Alerts <span id="alertCount" class="count" hidden></span></button>
+    </nav>
+    <section id="tab-cars" class="panel"><div id="cars"></div></section>
+    <section id="tab-history" class="panel" hidden>
+      <div class="form">
+        <label>Car <select id="hCar"></select></label>
+        <label>Date <input type="date" id="hDate"></label>
+        <button id="hLoad" class="primary">Show trips</button>
+      </div>
+      <div id="hSummary"></div>
+      <div id="hPlayer" hidden>
+        <div class="player">
+          <button id="hPlay" class="icon" aria-label="Play">▶</button>
+          <input type="range" id="hSlider" min="0" max="0" value="0">
+        </div>
+        <div id="hTime" class="muted"></div>
+      </div>
+      <div id="hStops"></div>
+    </section>
+    <section id="tab-alerts" class="panel" hidden><div id="alerts"></div></section>
+  </aside>
+  <main class="mapwrap"><div id="map"></div></main>
+</div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

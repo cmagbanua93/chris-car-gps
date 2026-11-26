@@ -1,0 +1,14 @@
+{
+  "name": "car-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "One dashboard for cars tracked on several GPS-Server.net based sites",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

@@ -68,3 +68,17 @@ button, input, select { font: inherit; color: inherit; }
 .tag.idle { background: var(--idle); } .tag.off { background: var(--danger); }
 .marker.offmark { width: 24px; height: 24px; background: var(--danger); font-size: 12px; }
 h4 { margin: 14px 0 4px; font-size: 13px; }
+
+.tl-head { background: var(--bg); text-align: center; padding: 8px; font-weight: 600; margin-top: 12px; border-radius: 6px 6px 0 0; }
+.tl { display: grid; grid-template-columns: 30px auto 1fr; gap: 4px 10px; align-items: center; padding: 10px 6px; border-bottom: 1px solid var(--line); cursor: pointer; font-variant-numeric: tabular-nums; }
+.tl:hover, .tl.sel { background: var(--bg); }
+.tl-time { font-size: 13px; }
+.tl-dur { font-size: 13px; font-weight: 600; }
+.tl-extra { grid-column: 2 / -1; font-size: 12px; }
+.tl-extra:empty { display: none; }
+.ti { display: inline-grid; place-items: center; width: 24px; height: 26px; font-weight: 700; font-size: 13px; color: #fff; }
+.ti-start { background: #8bc34a; clip-path: polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%); font-size: 11px; }
+.ti-park { background: #2f6fde; clip-path: polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%); }
+.ti-drive { color: var(--muted); }
+.pmark { width: 22px; height: 26px; background: #2f6fde; color: #fff; font-weight: 700; display: grid; place-items: center; clip-path: polygon(0 0, 100% 0, 100% 75%, 50% 100%, 0 75%); }
+.carmark { width: 40px; height: 40px; display: grid; place-items: center; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }

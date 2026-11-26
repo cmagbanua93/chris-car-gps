@@ -105,22 +105,30 @@ function pillText(v) {
 
 function engineLine(v) {
   const e = v.engine || {};
+  const est = /estimated/.test(v.ignitionSource || '') ? ' <span class="muted">(estimated)</span>' : '';
   if (e.on === null || e.on === undefined) return v.status === 'offline' ? null : { cls: 'muted', html: 'Engine on/off is not reported by this tracker' };
   if (e.on && e.idleSince) {
     const min = Math.max(1, Math.round((Date.now() - e.idleSince) / 60000));
     const warn = min >= (state.config.idleAlertMinutes || 10);
-    return { cls: warn ? 'warn' : 'idle', html: `Idling with engine on for <b>${dur(min * 60)}</b>${warn ? ' (left running?)' : ''}` };
+    return { cls: warn ? 'warn' : 'idle', html: `Idling with engine on for <b>${dur(min * 60)}</b>${warn ? ' (left running?)' : ''}${est}` };
   }
-  if (e.on) return { cls: 'on', html: `Engine on${e.since ? ` since ${esc(fmtTime(e.since))}` : ''}` };
-  return { cls: 'off', html: `Engine off${e.since ? ` since ${esc(fmtTime(e.since))} · ${dur((Date.now() - e.since) / 1000)}` : ''}` };
+  if (e.on) return { cls: 'on', html: `Engine on${e.since ? ` since ${esc(fmtTime(e.since))}` : ''}${est}` };
+  return { cls: 'off', html: `Engine off${e.since ? ` since ${esc(fmtTime(e.since))} · ${dur((Date.now() - e.since) / 1000)}` : ''}${est}` };
 }
 
+const STATUS_COLOR = { moving: '#1f9d55', idle: '#d98c00', parked: '#4a6fa5', offline: '#9aa1ad' };
+// Top-down car, nose pointing up; rotated to the heading so it turns like the car icon in Google Maps navigation.
+function carSvg(color, angle) {
+  return `<div class="carmark" style="transform: rotate(${angle}deg)"><svg viewBox="0 0 40 40" width="40" height="40">
+    <rect x="11" y="3" width="18" height="34" rx="7" fill="${color}" stroke="#fff" stroke-width="2"/>
+    <path d="M13.5 13 Q20 9.5 26.5 13 L25 18 Q20 16.5 15 18 Z" fill="#cfe3ff" opacity=".95"/>
+    <path d="M15 29 Q20 30.5 25 29 L26 33 Q20 35 14 33 Z" fill="#cfe3ff" opacity=".8"/>
+    <rect x="13" y="19" width="14" height="9" rx="2" fill="#000" opacity=".12"/>
+    <circle cx="14.5" cy="5.8" r="1.4" fill="#fff6b0"/><circle cx="25.5" cy="5.8" r="1.4" fill="#fff6b0"/>
+  </svg></div>`;
+}
 function icon(v) {
-  return L.divIcon({
-    className: '',
-    html: `<div class="marker ${v.status}" style="transform: rotate(${v.status === 'moving' ? v.angle : 0}deg)">${v.status === 'moving' ? '➤' : '●'}</div>`,
-    iconSize: [30, 30], iconAnchor: [15, 15],
-  });
+  return L.divIcon({ className: '', html: carSvg(STATUS_COLOR[v.status] || '#4a6fa5', v.angle || 0), iconSize: [40, 40], iconAnchor: [20, 20] });
 }
 
 function renderMarkers() {
@@ -131,7 +139,7 @@ function renderMarkers() {
     let m = markers.get(v.id);
     const popup = `<b>${esc(v.name)}</b><br>${Math.round(v.speed)} km/h · ${pillText(v)}<br>${esc(fmtTime(v.trackerTime))}<br><a href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open in Google Maps</a>`;
     if (!m) {
-      m = L.marker([v.lat, v.lng], { icon: icon(v) }).addTo(map).bindTooltip(v.name, { permanent: true, direction: 'top', offset: [0, -14], className: 'lbl' });
+      m = L.marker([v.lat, v.lng], { icon: icon(v) }).addTo(map).bindTooltip(v.name, { permanent: true, direction: 'top', offset: [0, -18], className: 'lbl' });
       m.on('click', () => focusCar(v.id));
       markers.set(v.id, m);
     } else {
@@ -192,7 +200,8 @@ async function loadHistory() {
       <div class="stat"><b>${s.topSpeed} km/h</b>Top speed</div>
       <div class="stat"><b>${s.avgSpeed} km/h</b>Average</div>
       <div class="stat"><b>${h.engine ? dur(s.idleSec) : '—'}</b>Idling (engine on)</div>
-      <div class="stat"><b>${h.stops.length}</b>Stops</div></div>` : '')
+      <div class="stat"><b>${(h.timeline || []).filter((x) => x.kind === 'parked').length}</b>Times parked</div></div>` : '')
+      + (h.ignitionSource && /estimated/.test(h.ignitionSource) ? `<p class="muted">Engine on/off for this car is ${esc(h.ignitionSource)}.</p>` : '')
       + (h.engine ? `<div class="summary">
         <div class="stat"><b>${dur(h.engine.engineOnSec)}</b>Engine on</div>
         <div class="stat"><b>${h.engine.events.filter((e) => e.kind === 'engine_off').length}</b>Times turned off</div>
@@ -206,34 +215,82 @@ async function loadHistory() {
       map.fitBounds(line.getBounds().pad(0.15));
       $('#hSlider').max = track.length - 1; $('#hSlider').value = 0;
       $('#hPlayer').hidden = false;
-      playMarker = L.circleMarker([track[0][1], track[0][2]], { radius: 8, color: '#fff', weight: 3, fillColor: '#d98c00', fillOpacity: 1 }).addTo(histLayer);
+      playMarker = L.marker([track[0][1], track[0][2]], { icon: L.divIcon({ className: '', html: carSvg('#d98c00', 0), iconSize: [40, 40], iconAnchor: [20, 20] }), zIndexOffset: 1000 }).addTo(histLayer);
       showPoint(0);
     } else $('#hPlayer').hidden = true;
-    h.stops.forEach((st, i) => L.marker([st.lat, st.lng], { icon: L.divIcon({ className: '', html: `<div class="marker stopped" style="width:22px;height:22px;font-size:11px">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
-      .addTo(histLayer).bindTooltip(`Stop ${i + 1}: ${fmtTime(st.start)} · ${st.duration}`));
-    let engineHtml = '';
-    if (h.engine) {
-      h.engine.idle.forEach((p) => L.circleMarker([p.lat, p.lng], { radius: 9, color: '#d98c00', weight: 3, fillColor: '#d98c00', fillOpacity: 0.35 })
-        .addTo(histLayer).bindTooltip(`Idling ${dur(p.seconds)}: ${fmtTime(p.start)} to ${fmtTime(p.end)}`));
-      h.engine.offPeriods.forEach((p) => L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: '<div class="marker offmark">⏻</div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
-        .addTo(histLayer).bindTooltip(`Engine off at ${fmtTime(p.start)} for ${dur(p.seconds)}${p.ongoing ? ' (still off)' : ''}`));
-      const rows = [
-        ...h.engine.idle.map((p) => ({ t: p.start, lat: p.lat, lng: p.lng, html: `<span class="tag idle">Idle</span> <b>${dur(p.seconds)}</b> with engine on<div class="muted">${esc(fmtTime(p.start))} to ${esc(fmtTime(p.end))}</div>` })),
-        ...h.engine.offPeriods.map((p) => ({ t: p.start, lat: p.lat, lng: p.lng, html: `<span class="tag off">Engine off</span> at <b>${esc(fmtTime(p.start))}</b><div class="muted">Stayed off ${dur(p.seconds)}${p.ongoing ? ' (still off)' : ''}</div>` })),
-      ].sort((a, b) => a.t - b.t);
-      engineHtml = `<h4>Engine timeline</h4>` + (rows.length ? rows.map((r) => `<div class="stop" data-lat="${r.lat}" data-lng="${r.lng}">${r.html}</div>`).join('') : '<p class="muted">No idling or engine-off events this day.</p>');
-    }
-    $('#hStops').innerHTML = engineHtml + (h.stops.length ? '<h4>Stops</h4>' : '') + h.stops.map((st, i) => `<div class="stop" data-lat="${st.lat}" data-lng="${st.lng}"><b>Stop ${i + 1}</b> · ${esc(st.duration)}<div class="muted">${esc(fmtTime(st.start))} to ${esc(fmtTime(st.end))}</div></div>`).join('');
-    document.querySelectorAll('.stop').forEach((el) => el.addEventListener('click', () => map.setView([+el.dataset.lat, +el.dataset.lng], 17)));
+    // Engine-off points on the map
+    (h.engine?.offPeriods || []).forEach((p) => L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: '<div class="marker offmark">⏻</div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
+      .addTo(histLayer).bindTooltip(`Engine off at ${fmtTime(p.start)} for ${dur(p.seconds)}${p.ongoing ? ' (still off)' : ''}`));
+    renderTimeline(h);
   } catch (e) {
     $('#hSummary').innerHTML = `<div class="err">Couldn't load history: ${esc(e.message)}</div>`;
   } finally {
     btn.disabled = false; btn.textContent = 'Show trips';
   }
 }
+const ICONS = {
+  start: '<span class="ti ti-start">▶</span>',
+  parked: '<span class="ti ti-park">P</span>',
+  drive: '<span class="ti ti-drive"><svg viewBox="0 0 24 24" width="22" height="22"><circle cx="5" cy="5" r="0" /><path d="M5 5 C 9 9, 9 13, 13 15 S 18 18, 19 19" fill="none" stroke="currentColor" stroke-width="2" stroke-dasharray="2 3"/><path d="M2 2 L8 8 M8 2 L2 8" stroke="#d64545" stroke-width="2.4"/><path d="M16 16 L22 22 M22 16 L16 22" stroke="#7cb342" stroke-width="2.4"/></svg></span>',
+};
+const clock = (ms) => new Date(ms).toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const dateOf = (ms) => new Date(ms).toLocaleDateString('en-CA', { timeZone: tz });
+const longDur = (sec) => {
+  sec = Math.round(sec); const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  return [h ? `${h} h` : '', m ? `${m} min` : '', !h && s ? `${s} s` : ''].filter(Boolean).join(' ') || '0 s';
+};
+let segLayer = null;
+function renderTimeline(h) {
+  const items = h.timeline || [];
+  if (!items.length) { $('#hStops').innerHTML = ''; return; }
+  let parkNo = 0;
+  items.forEach((it) => {
+    if (it.kind !== 'parked') return;
+    parkNo++;
+    L.marker([it.lat, it.lng], { icon: L.divIcon({ className: '', html: `<div class="pmark">P</div>`, iconSize: [22, 26], iconAnchor: [11, 26] }) })
+      .addTo(histLayer).bindTooltip(`Parked ${clock(it.t)} · ${longDur(it.seconds)}`);
+  });
+  const rows = items.map((it, i) => {
+    let extra = '';
+    if (it.kind === 'parked' && it.engineOnSec != null) {
+      if (it.engineOnSec >= 60) {
+        const all = it.engineOnSec >= it.seconds - 60;
+        extra = all ? `<span class="tag idle">Idling the whole time (engine on)</span>`
+          : `<span class="tag idle">Idle ${longDur(it.engineOnSec)}</span> <span class="tag off">Engine off ${longDur(it.seconds - it.engineOnSec)}</span>`;
+      } else extra = `<span class="tag off">Engine off ${longDur(it.seconds)}</span>`;
+    }
+    if (it.kind === 'drive') extra = `<span class="muted">${it.km} km · max ${it.topSpeed} km/h</span>`;
+    const durTxt = it.kind === 'start' ? '' : longDur(it.seconds);
+    return `<div class="tl" data-i="${i}">
+      ${ICONS[it.kind]}
+      <span class="tl-time">${esc(dateOf(it.t))} ${esc(clock(it.t))}</span>
+      <span class="tl-dur">${esc(durTxt)}</span>
+      <div class="tl-extra">${extra}</div>
+    </div>`;
+  }).join('');
+  $('#hStops').innerHTML = `<div class="tl-head">Information</div>${rows}`;
+  document.querySelectorAll('.tl').forEach((el) => el.addEventListener('click', () => {
+    document.querySelectorAll('.tl').forEach((x) => x.classList.toggle('sel', x === el));
+    const it = items[+el.dataset.i];
+    if (segLayer) { histLayer.removeLayer(segLayer); segLayer = null; }
+    if (it.kind === 'drive') {
+      const pts = track.filter((p) => p[0] >= it.t && p[0] <= it.end).map((p) => [p[1], p[2]]);
+      if (pts.length > 1) { segLayer = L.polyline(pts, { color: '#d64545', weight: 6 }).addTo(histLayer); map.fitBounds(segLayer.getBounds().pad(0.2)); }
+    } else map.setView([it.lat, it.lng], 17);
+    const idx = track.findIndex((p) => p[0] >= it.t);
+    if (idx >= 0) { $('#hSlider').value = idx; showPoint(idx); }
+  }));
+}
+
 function showPoint(i) {
   const p = track[i]; if (!p || !playMarker) return;
   playMarker.setLatLng([p[1], p[2]]);
+  const q = track[Math.min(i + 1, track.length - 1)];
+  if (q && (q[1] !== p[1] || q[2] !== p[2])) {
+    const r = Math.PI / 180, y = Math.sin((q[2] - p[2]) * r) * Math.cos(q[1] * r), x = Math.cos(p[1] * r) * Math.sin(q[1] * r) - Math.sin(p[1] * r) * Math.cos(q[1] * r) * Math.cos((q[2] - p[2]) * r);
+    const el = playMarker.getElement()?.querySelector('.carmark');
+    if (el) el.style.transform = `rotate(${(Math.atan2(y, x) / r + 360) % 360}deg)`;
+  }
   $('#hTime').textContent = `${fmtTime(p[0])} · ${Math.round(p[3])} km/h${p[4] === true ? ' · engine on' : p[4] === false ? ' · engine off' : ''}`;
 }
 function stopPlay() { clearInterval(playTimer); playTimer = null; $('#hPlay').textContent = '▶'; }

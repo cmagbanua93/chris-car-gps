@@ -208,7 +208,7 @@ function fillCarSelect() {
   const cur = sel.value;
   const opts = state.vehicles.map((v) => `<option value="${esc(v.id)}">${esc(v.name)}</option>`).join('');
   if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; if (cur) sel.value = cur; }
-  if (!$('#hDate').value) $('#hDate').value = state.config.today;
+  if (!$('#hDate').value) setDate(state.config.today, false);
 }
 
 let track = [], playTimer = null, playMarker = null;
@@ -335,6 +335,62 @@ $('#hPlay').addEventListener('click', () => {
 });
 $('#hSlider').addEventListener('input', (e) => showPoint(+e.target.value));
 $('#hLoad').addEventListener('click', loadHistory);
+
+// ---------- date picker ----------
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+let calMonth = null; // [year, monthIndex]
+const pad = (n) => String(n).padStart(2, '0');
+const ymd = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+function todayYmd() { return state.config.today || new Date().toISOString().slice(0, 10); }
+function setDate(v, load = true) {
+  $('#hDate').value = v;
+  const [y, m, d] = v.split('-').map(Number);
+  const wd = new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  $('#hDateText').textContent = v === todayYmd() ? `Today, ${MONTHS[m - 1].slice(0, 3)} ${d}` : `${wd}, ${MONTHS[m - 1].slice(0, 3)} ${d}, ${y}`;
+  $('#hNext').disabled = v >= todayYmd();
+  if (load && $('#hCar').value) loadHistory();
+}
+function shiftDate(days) {
+  const [y, m, d] = $('#hDate').value.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  const v = t.toISOString().slice(0, 10);
+  if (v <= todayYmd()) setDate(v);
+}
+function renderCal() {
+  const [y, m] = calMonth;
+  const first = new Date(Date.UTC(y, m, 1)).getUTCDay();
+  const days = new Date(Date.UTC(y, m + 1, 0)).getUTCDate();
+  const sel = $('#hDate').value, today = todayYmd();
+  let cells = '';
+  for (let i = 0; i < first; i++) cells += '<span></span>';
+  for (let d = 1; d <= days; d++) {
+    const v = ymd(y, m, d);
+    cells += `<button type="button" data-v="${v}" class="${v === sel ? 'sel' : ''} ${v === today ? 'today' : ''}" ${v > today ? 'disabled' : ''}>${d}</button>`;
+  }
+  const nextDisabled = ymd(y, m + 1 > 11 ? 0 : m + 1, 1) > today && (y > Number(today.slice(0, 4)) || m >= Number(today.slice(5, 7)) - 1);
+  $('#cal').innerHTML = `<div class="cal-head"><button type="button" class="icon" data-nav="-1" aria-label="Previous month">‹</button>
+      <b>${MONTHS[m]} ${y}</b><button type="button" class="icon" data-nav="1" aria-label="Next month" ${nextDisabled ? 'disabled' : ''}>›</button></div>
+    <div class="cal-grid">${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((w) => `<i>${w}</i>`).join('')}${cells}</div>
+    <div class="cal-quick"><button type="button" data-q="0">Today</button><button type="button" data-q="-1">Yesterday</button><button type="button" data-q="-6">7 days ago</button></div>`;
+}
+function openCal() {
+  const [y, m] = ($('#hDate').value || todayYmd()).split('-').map(Number);
+  calMonth = [y, m - 1];
+  renderCal();
+  $('#cal').hidden = false;
+}
+$('#hDateBtn').addEventListener('click', (e) => { e.stopPropagation(); if ($('#cal').hidden) openCal(); else $('#cal').hidden = true; });
+$('#cal').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  if (b.dataset.nav) { let [y, m] = calMonth; m += Number(b.dataset.nav); if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } calMonth = [y, m]; renderCal(); return; }
+  if (b.dataset.q) { const [y, m, d] = todayYmd().split('-').map(Number); setDate(new Date(Date.UTC(y, m - 1, d + Number(b.dataset.q))).toISOString().slice(0, 10)); $('#cal').hidden = true; return; }
+  if (b.dataset.v) { setDate(b.dataset.v); $('#cal').hidden = true; }
+});
+document.addEventListener('click', () => { $('#cal').hidden = true; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#cal').hidden = true; });
+$('#hPrev').addEventListener('click', () => shiftDate(-1));
+$('#hNext').addEventListener('click', () => shiftDate(1));
 
 // ---------- alerts ----------
 const KIND = { offline: 'Offline', speeding: 'Speeding', night_use: 'Night use', power_cut: 'Power cut', idle_long: 'Left running' };

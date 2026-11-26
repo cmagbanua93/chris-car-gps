@@ -24,7 +24,15 @@
     <section id="tab-history" class="panel" hidden>
       <div class="form">
         <label>Car <select id="hCar"></select></label>
-        <label>Date <input type="date" id="hDate"></label>
+        <div class="datefield"><span class="flabel">Date</span>
+          <div class="daterow">
+            <button type="button" class="icon" id="hPrev" aria-label="Previous day">‹</button>
+            <button type="button" class="datebtn" id="hDateBtn" aria-haspopup="dialog">📅 <span id="hDateText">Pick a date</span></button>
+            <button type="button" class="icon" id="hNext" aria-label="Next day">›</button>
+          </div>
+          <input type="hidden" id="hDate">
+          <div id="cal" class="cal" hidden role="dialog" aria-label="Choose a date"></div>
+        </div>
         <button id="hLoad" class="primary">Show trips</button>
       </div>
       <div id="hSummary"></div>

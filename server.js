@@ -23,7 +23,11 @@ const cfg = {
   nightEnd: num(env.NIGHT_END_HOUR, 5),
   tzOffset: env.TZ_OFFSET || '+08:00',
   timeZone: env.TIME_ZONE || 'Asia/Manila',
-  zones: parseZones(env.ZONES), // "Home:10.24,123.79,300;Office:10.31,123.89,200"
+  zones: parseZones(env.ZONES),
+  // Which tracker input is the ignition, per car, when the provider has no Engine sensor: "KBJ 4803=di1;GBE 9707=di2"
+  ignitionParams: Object.fromEntries((env.IGNITION_PARAMS || '').split(';').map((x) => x.split('=').map((y) => y.trim())).filter((x) => x[0] && x[1])),
+  idleAlertMinutes: num(env.IDLE_ALERT_MINUTES, 10),
+  idleMinSeconds: num(env.IDLE_MIN_SECONDS, 120), // "Home:10.24,123.79,300;Office:10.31,123.89,200"
   dataDir: env.DATA_DIR || path.join(__dirname, 'data'),
   keepDays: num(env.KEEP_DAYS, 365),
   password: env.DASHBOARD_PASSWORD || '',
@@ -59,6 +63,7 @@ for (let i = 1; i <= 10; i++) {
     password: env[`SOURCE_${i}_PASSWORD`] || '',
     tzOffset: cfg.tzOffset,
     log,
+    ignitionOverrides: cfg.ignitionParams,
   }));
 }
 const demo = sources.length === 0 || env.DEMO === '1';
@@ -93,7 +98,47 @@ function statusOf(v) {
   if (!seen || Date.now() - seen > cfg.offlineMinutes * 60000) return 'offline';
   if (v.speed > 3) return 'moving';
   if (v.sensors?.ignition) return 'idle';
-  return 'stopped';
+  return 'parked';
+}
+
+// Engine state per car: on/off, since when, and how long it has been idling.
+const engineState = new Map();
+const ignitionChecked = new Set();
+const engineHint = new Map(); // vehicle id -> what today's history says about the last engine switch
+function trackEngine(v) {
+  const ign = v.sensors?.ignition;
+  const t = v.trackerTime || Date.now();
+  let e = engineState.get(v.id);
+  if (ign === null || ign === undefined) { v.engine = { on: null }; return; }
+  if (!e) {
+    const hint = engineHint.get(v.id);
+    const since = hint && hint.lastOn === ign ? hint.lastT : null;
+    const idleSince = hint && ign && hint.idleStart && Date.now() - hint.idleEnd < 5 * 60000 ? hint.idleStart : null;
+    e = { on: ign, since, idleSince };
+    engineState.set(v.id, e);
+  }
+  else if (e.on !== ign) { e.on = ign; e.since = t; e.idleSince = null; }
+  const idling = ign && v.speed <= 3;
+  if (idling && !e.idleSince) e.idleSince = t;
+  if (!idling) e.idleSince = null;
+  v.engine = { ...e };
+}
+
+// Once per car: find the ignition input and when the engine last switched, from today's history.
+async function primeEngine(src, v) {
+  if (ignitionChecked.has(v.id) || !src.detectIgnition) return;
+  ignitionChecked.add(v.id);
+  try {
+    await src.detectIgnition(v.imei);
+    const h = await getHistory(v.id, todayStr());
+    const last = h.engine?.events?.at(-1);
+    const lastIdle = h.engine?.idle?.at(-1);
+    engineHint.set(v.id, { lastT: last?.t ?? null, lastOn: last ? last.kind === 'engine_on' : null, idleStart: lastIdle?.start, idleEnd: lastIdle?.end });
+    engineState.delete(v.id); // rebuild from the hint on the next poll
+  } catch (err) {
+    ignitionChecked.delete(v.id);
+    log.warn(`[${src.id}] engine check for ${v.name} failed: ${err.message}`);
+  }
 }
 
 async function pollSource(src) {
@@ -101,6 +146,8 @@ async function pollSource(src) {
   try {
     const list = await src.live();
     for (const v of list) {
+      primeEngine(src, v);
+      trackEngine(v);
       v.status = statusOf(v);
       vehicles.set(v.id, v);
       store.savePosition(v);
@@ -140,7 +187,7 @@ async function getHistory(id, dateStr) {
   const key = `${id}|${dateStr}`;
   const hit = histCache.get(key);
   if (hit && (!isToday || Date.now() - hit.at < 10 * 60000)) return hit.data;
-  const data = await src.history(imei, from, to);
+  const data = await src.history(imei, from, to, { idleMinSec: cfg.idleMinSeconds });
   histCache.set(key, { at: Date.now(), data });
   if (histCache.size > 200) histCache.delete(histCache.keys().next().value);
   return data;
@@ -183,7 +230,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, {
         demo,
         now: Date.now(),
-        config: { speedLimit: cfg.speedLimit, offlineMinutes: cfg.offlineMinutes, zones: cfg.zones, timeZone: cfg.timeZone, pollSeconds: cfg.pollSeconds, today: todayStr() },
+        config: { idleAlertMinutes: cfg.idleAlertMinutes, speedLimit: cfg.speedLimit, offlineMinutes: cfg.offlineMinutes, zones: cfg.zones, timeZone: cfg.timeZone, pollSeconds: cfg.pollSeconds, today: todayStr() },
         sources: sources.map((s) => ({ id: s.id, name: s.name, ...(sourceState.get(s.id) || {}) })),
         vehicles: [...vehicles.values()].map((v) => ({ ...v, status: statusOf(v) })),
       });

@@ -7,7 +7,9 @@ It signs in with your existing accounts, reads the same data their map shows, an
 - Live map of every car, coloured by status (moving / idle / stopped / offline), with speed, ignition, car battery and last update.
 - Today's distance and driving time per car.
 - History for any car and day: route, numbered stops, summary, and replay.
-- Alerts: offline, speeding, night use, power cut (tracker unplugged), arriving at / leaving your zones. Optional Telegram messages.
+- Engine status: idling (engine on, not moving) with how long, or engine off since when. The ignition input is taken from the provider's Engine sensor, or learned from history when the provider has none.
+- History engine timeline: every idle period and every time the engine was turned off, also marked on the map.
+- Alerts: left running (idling too long), offline, speeding, night use, power cut (tracker unplugged), arriving at / leaving your zones. Optional Telegram messages.
 - Keeps its own copy of positions (SQLite), so history is still there if a provider can't answer.
 - Polite: each site is read every 30 s by default (never faster than 20 s); failed sign-ins back off up to 1 hour.
 

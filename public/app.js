@@ -60,9 +60,10 @@ function renderSources() {
 }
 
 function renderTiles() {
-  const c = { moving: 0, idle: 0, stopped: 0, offline: 0 };
-  state.vehicles.forEach((v) => c[v.status]++);
-  $('#tiles').innerHTML = Object.entries(c).map(([k, n]) => `<div class="tile"><b style="color:var(--${k})">${n}</b><span>${k}</span></div>`).join('');
+  const c = { moving: 0, idle: 0, parked: 0, offline: 0 };
+  state.vehicles.forEach((v) => { c[v.status] = (c[v.status] || 0) + 1; });
+  const label = { moving: 'Moving', idle: 'Idling', parked: 'Parked', offline: 'Offline' };
+  $('#tiles').innerHTML = Object.entries(c).map(([k, n]) => `<div class="tile"><b style="color:var(--${k})">${n}</b><span>${label[k]}</span></div>`).join('');
 }
 
 function renderCars() {
@@ -70,19 +71,21 @@ function renderCars() {
     $('#cars').innerHTML = `<p class="muted">Waiting for the first update from your GPS accounts…</p>`;
     return;
   }
-  const order = { moving: 0, idle: 1, stopped: 2, offline: 3 };
+  const order = { moving: 0, idle: 1, parked: 2, offline: 3 };
   const list = [...state.vehicles].sort((a, b) => order[a.status] - order[b.status] || a.name.localeCompare(b.name));
   $('#cars').innerHTML = list.map((v) => {
     const s = v.sensors || {};
     const t = today[v.id];
     const ign = s.ignition == null ? '—' : s.ignition ? 'On' : 'Off';
+    const eng = engineLine(v);
     const power = s.powerV != null ? `${s.powerV} V` : '—';
     return `<div class="car ${selected === v.id ? 'sel' : ''}" data-id="${esc(v.id)}">
       <div class="row"><div><h3>${esc(v.name)}</h3><div class="plate">${esc(v.plate && v.plate !== v.name ? v.plate + ' · ' : '')}${esc(v.source)}</div></div>
-      <span class="pill ${v.status}">${v.status}</span></div>
+      <span class="pill ${v.status}">${pillText(v)}</span></div>
+      ${eng ? `<div class="engine ${eng.cls}">${eng.html}</div>` : ''}
       <div class="stats">
         <div class="stat"><b>${Math.round(v.speed)} km/h</b>Speed</div>
-        <div class="stat"><b>${ign}</b>Ignition</div>
+        <div class="stat"><b>${ign}</b>Engine</div>
         <div class="stat"><b>${power}</b>Car battery</div>
         <div class="stat"><b>${t && !t.error ? t.distanceKm.toFixed(1) + ' km' : '—'}</b>Today</div>
         <div class="stat"><b>${t && !t.error ? dur(t.drivingSec) : '—'}</b>Driving today</div>
@@ -92,6 +95,24 @@ function renderCars() {
     </div>`;
   }).join('');
   document.querySelectorAll('.car').forEach((el) => el.addEventListener('click', () => focusCar(el.dataset.id)));
+}
+
+function pillText(v) {
+  if (v.status === 'idle') return 'Idling';
+  if (v.status === 'parked') return v.engine?.on === false ? 'Engine off' : 'Parked';
+  return v.status === 'moving' ? 'Moving' : 'Offline';
+}
+
+function engineLine(v) {
+  const e = v.engine || {};
+  if (e.on === null || e.on === undefined) return v.status === 'offline' ? null : { cls: 'muted', html: 'Engine on/off is not reported by this tracker' };
+  if (e.on && e.idleSince) {
+    const min = Math.max(1, Math.round((Date.now() - e.idleSince) / 60000));
+    const warn = min >= (state.config.idleAlertMinutes || 10);
+    return { cls: warn ? 'warn' : 'idle', html: `Idling with engine on for <b>${dur(min * 60)}</b>${warn ? ' (left running?)' : ''}` };
+  }
+  if (e.on) return { cls: 'on', html: `Engine on${e.since ? ` since ${esc(fmtTime(e.since))}` : ''}` };
+  return { cls: 'off', html: `Engine off${e.since ? ` since ${esc(fmtTime(e.since))} · ${dur((Date.now() - e.since) / 1000)}` : ''}` };
 }
 
 function icon(v) {
@@ -108,7 +129,7 @@ function renderMarkers() {
     if (!Number.isFinite(v.lat) || !Number.isFinite(v.lng)) continue;
     seen.add(v.id);
     let m = markers.get(v.id);
-    const popup = `<b>${esc(v.name)}</b><br>${Math.round(v.speed)} km/h · ${v.status}<br>${esc(fmtTime(v.trackerTime))}<br><a href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open in Google Maps</a>`;
+    const popup = `<b>${esc(v.name)}</b><br>${Math.round(v.speed)} km/h · ${pillText(v)}<br>${esc(fmtTime(v.trackerTime))}<br><a href="https://maps.google.com/?q=${v.lat},${v.lng}" target="_blank" rel="noopener">Open in Google Maps</a>`;
     if (!m) {
       m = L.marker([v.lat, v.lng], { icon: icon(v) }).addTo(map).bindTooltip(v.name, { permanent: true, direction: 'top', offset: [0, -14], className: 'lbl' });
       m.on('click', () => focusCar(v.id));
@@ -170,8 +191,12 @@ async function loadHistory() {
       <div class="stat"><b>${dur(s.drivingSec)}</b>Driving</div>
       <div class="stat"><b>${s.topSpeed} km/h</b>Top speed</div>
       <div class="stat"><b>${s.avgSpeed} km/h</b>Average</div>
-      <div class="stat"><b>${dur(s.idleSec)}</b>Idling</div>
+      <div class="stat"><b>${h.engine ? dur(s.idleSec) : '—'}</b>Idling (engine on)</div>
       <div class="stat"><b>${h.stops.length}</b>Stops</div></div>` : '')
+      + (h.engine ? `<div class="summary">
+        <div class="stat"><b>${dur(h.engine.engineOnSec)}</b>Engine on</div>
+        <div class="stat"><b>${h.engine.events.filter((e) => e.kind === 'engine_off').length}</b>Times turned off</div>
+        <div class="stat"><b>${h.engine.idle.length}</b>Idle periods</div></div>` : (h.ignitionSource ? `<p class="muted">Engine on/off: ${esc(h.ignitionSource)}.</p>` : ''))
       + (h.source === 'local' ? `<div class="err">Provider didn't answer (${esc(h.error)}). Showing positions saved by this dashboard.</div>` : '')
       + (!track.length ? '<p class="muted">No movement recorded on this day.</p>' : '');
     if (track.length) {
@@ -186,7 +211,19 @@ async function loadHistory() {
     } else $('#hPlayer').hidden = true;
     h.stops.forEach((st, i) => L.marker([st.lat, st.lng], { icon: L.divIcon({ className: '', html: `<div class="marker stopped" style="width:22px;height:22px;font-size:11px">${i + 1}</div>`, iconSize: [22, 22], iconAnchor: [11, 11] }) })
       .addTo(histLayer).bindTooltip(`Stop ${i + 1}: ${fmtTime(st.start)} · ${st.duration}`));
-    $('#hStops').innerHTML = h.stops.map((st, i) => `<div class="stop" data-lat="${st.lat}" data-lng="${st.lng}"><b>Stop ${i + 1}</b> · ${esc(st.duration)}<div class="muted">${esc(fmtTime(st.start))} to ${esc(fmtTime(st.end))}</div></div>`).join('');
+    let engineHtml = '';
+    if (h.engine) {
+      h.engine.idle.forEach((p) => L.circleMarker([p.lat, p.lng], { radius: 9, color: '#d98c00', weight: 3, fillColor: '#d98c00', fillOpacity: 0.35 })
+        .addTo(histLayer).bindTooltip(`Idling ${dur(p.seconds)}: ${fmtTime(p.start)} to ${fmtTime(p.end)}`));
+      h.engine.offPeriods.forEach((p) => L.marker([p.lat, p.lng], { icon: L.divIcon({ className: '', html: '<div class="marker offmark">⏻</div>', iconSize: [24, 24], iconAnchor: [12, 12] }) })
+        .addTo(histLayer).bindTooltip(`Engine off at ${fmtTime(p.start)} for ${dur(p.seconds)}${p.ongoing ? ' (still off)' : ''}`));
+      const rows = [
+        ...h.engine.idle.map((p) => ({ t: p.start, lat: p.lat, lng: p.lng, html: `<span class="tag idle">Idle</span> <b>${dur(p.seconds)}</b> with engine on<div class="muted">${esc(fmtTime(p.start))} to ${esc(fmtTime(p.end))}</div>` })),
+        ...h.engine.offPeriods.map((p) => ({ t: p.start, lat: p.lat, lng: p.lng, html: `<span class="tag off">Engine off</span> at <b>${esc(fmtTime(p.start))}</b><div class="muted">Stayed off ${dur(p.seconds)}${p.ongoing ? ' (still off)' : ''}</div>` })),
+      ].sort((a, b) => a.t - b.t);
+      engineHtml = `<h4>Engine timeline</h4>` + (rows.length ? rows.map((r) => `<div class="stop" data-lat="${r.lat}" data-lng="${r.lng}">${r.html}</div>`).join('') : '<p class="muted">No idling or engine-off events this day.</p>');
+    }
+    $('#hStops').innerHTML = engineHtml + (h.stops.length ? '<h4>Stops</h4>' : '') + h.stops.map((st, i) => `<div class="stop" data-lat="${st.lat}" data-lng="${st.lng}"><b>Stop ${i + 1}</b> · ${esc(st.duration)}<div class="muted">${esc(fmtTime(st.start))} to ${esc(fmtTime(st.end))}</div></div>`).join('');
     document.querySelectorAll('.stop').forEach((el) => el.addEventListener('click', () => map.setView([+el.dataset.lat, +el.dataset.lng], 17)));
   } catch (e) {
     $('#hSummary').innerHTML = `<div class="err">Couldn't load history: ${esc(e.message)}</div>`;
@@ -197,7 +234,7 @@ async function loadHistory() {
 function showPoint(i) {
   const p = track[i]; if (!p || !playMarker) return;
   playMarker.setLatLng([p[1], p[2]]);
-  $('#hTime').textContent = `${fmtTime(p[0])} · ${Math.round(p[3])} km/h`;
+  $('#hTime').textContent = `${fmtTime(p[0])} · ${Math.round(p[3])} km/h${p[4] === true ? ' · engine on' : p[4] === false ? ' · engine off' : ''}`;
 }
 function stopPlay() { clearInterval(playTimer); playTimer = null; $('#hPlay').textContent = '▶'; }
 $('#hPlay').addEventListener('click', () => {
@@ -215,7 +252,7 @@ $('#hSlider').addEventListener('input', (e) => showPoint(+e.target.value));
 $('#hLoad').addEventListener('click', loadHistory);
 
 // ---------- alerts ----------
-const KIND = { offline: 'Offline', speeding: 'Speeding', night_use: 'Night use', power_cut: 'Power cut' };
+const KIND = { offline: 'Offline', speeding: 'Speeding', night_use: 'Night use', power_cut: 'Power cut', idle_long: 'Left running' };
 async function loadAlerts() {
   try {
     const list = await api('api/alerts');
